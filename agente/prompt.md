@@ -10,8 +10,8 @@ Este archivo contiene el **system prompt completo** que debe pasarse al modelo d
 
 El agente opera en **dos modos**:
 
-1. **Análisis de cliente** — recibe JSON con métricas y devuelve diagnóstico estructurado
-2. **Preguntas libres** — responde preguntas del ejecutivo de cuenta sobre un cliente específico
+1. **Análisis de cliente**: Recibe JSON con métricas y devuelve diagnóstico estructurado
+2. **Preguntas libres**: Responde preguntas del ejecutivo de cuenta sobre un cliente específico
 
 ---
 
