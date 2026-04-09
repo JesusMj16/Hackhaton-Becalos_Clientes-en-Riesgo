@@ -2,12 +2,19 @@ import type {
   Client,
   NavItem,
   RiskLevel,
-  ClientDetail,
+  AnyClientDetail,
+  CriticoClientDetail,
+  ObservacionClientDetail,
+  SaludableClientDetail,
   ClientMetric,
   TotalScoreMetric,
   CauseItem,
   MitigationAction,
-} from "./dashboard";
+  HeaderStat,
+  HorizontalMetric,
+  RecommendationItem,
+  GrowthOpportunity,
+} from './dashboard';
 
 // --- Dashboard overview ---
 
@@ -41,7 +48,7 @@ export interface LegendDotProps {
 
 export interface IconButtonProps {
   icon: string;
-  variant?: "round" | "square";
+  variant?: 'round' | 'square';
 }
 
 export interface ClientsTableProps {
@@ -58,14 +65,14 @@ export interface ClientRowProps {
   npsColorClass: Record<RiskLevel, string>;
 }
 
-// --- Client detail ---
+// --- Client detail — shared ---
 
 export interface ClientBreadcrumbProps {
   clientName: string;
 }
 
 export interface ClientProfileHeaderProps {
-  client: ClientDetail;
+  client: AnyClientDetail;
 }
 
 export interface MetricCardProps {
@@ -99,4 +106,75 @@ export interface MitigationCardProps {
 
 export interface MitigationSectionProps {
   plan: MitigationAction[];
+}
+
+export interface AlertsBannerProps {
+  title: string;
+  subtitle: string;
+  tags: string[];
+}
+
+// --- Client detail — compact header (observacion + saludable) ---
+
+export interface ClientPageHeaderProps {
+  client: ObservacionClientDetail | SaludableClientDetail;
+}
+
+export interface HeaderStatsGridProps {
+  stats: HeaderStat[];
+}
+
+export interface HorizontalMetricsProps {
+  metrics: HorizontalMetric[];
+  riskLevel: RiskLevel;
+}
+
+// --- Client detail — diagnosis bento (observacion) ---
+
+export interface DiagnosisBentoProps {
+  bullets: string[];
+  churnProbability: number;
+  churnLabel: string;
+  riskLevel: RiskLevel;
+  barLabel?: string;
+}
+
+export interface ChurnBarProps {
+  probability: number;
+  label: string;
+  riskLevel: RiskLevel;
+  barLabel?: string;
+}
+
+// --- Client detail — recommendations (observacion + saludable) ---
+
+export interface RecommendationsPanelProps {
+  recommendations: RecommendationItem[];
+  riskLevel: RiskLevel;
+}
+
+export interface HistoryCardProps {
+  description: string;
+  date: string;
+  riskLevel: RiskLevel;
+}
+
+// --- Client detail — growth (saludable) ---
+
+export interface GrowthPanelProps {
+  opportunities: GrowthOpportunity[];
+}
+
+// --- Layout orchestrators ---
+
+export interface CriticoLayoutProps {
+  client: CriticoClientDetail;
+}
+
+export interface ObservacionLayoutProps {
+  client: ObservacionClientDetail;
+}
+
+export interface SaludableLayoutProps {
+  client: SaludableClientDetail;
 }

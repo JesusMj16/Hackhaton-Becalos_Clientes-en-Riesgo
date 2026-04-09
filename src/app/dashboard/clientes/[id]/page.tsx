@@ -1,11 +1,13 @@
-import { notFound } from "next/navigation";
-import { getClientDetail } from "@/data/client-details";
-import { ClientBreadcrumb } from "@/components/dashboard/client-detail/breadcrumb";
-import { ClientProfileHeader } from "@/components/dashboard/client-detail/profile-header";
-import { MetricsSection } from "@/components/dashboard/client-detail/metrics-section";
-import { DiagnosisPanel } from "@/components/dashboard/client-detail/diagnosis-panel";
-import { CausesList } from "@/components/dashboard/client-detail/causes-list";
-import { MitigationSection } from "@/components/dashboard/client-detail/mitigation-section";
+import { notFound } from 'next/navigation';
+import { getClientDetail } from '@/data/client-details';
+import type {
+  CriticoClientDetail,
+  ObservacionClientDetail,
+  SaludableClientDetail,
+} from '@/types/dashboard';
+import { CriticoLayout } from '@/components/dashboard/client-detail/layouts/critico-layout';
+import { ObservacionLayout } from '@/components/dashboard/client-detail/layouts/observacion-layout';
+import { SaludableLayout } from '@/components/dashboard/client-detail/layouts/saludable-layout';
 
 export default async function ClientDetailPage({
   params,
@@ -17,24 +19,13 @@ export default async function ClientDetailPage({
 
   if (!client) notFound();
 
-  return (
-    <>
-      <ClientBreadcrumb clientName={client.name} />
-      <ClientProfileHeader client={client} />
-      <MetricsSection
-        metrics={client.metrics}
-        totalScore={client.totalScoreMetric}
-        riskLevel={client.riskLevel}
-      />
-      <div className="mb-8 grid grid-cols-12 gap-6">
-        <div className="col-span-12 md:col-span-8">
-          <DiagnosisPanel diagnosis={client.diagnosis} />
-        </div>
-        <div className="col-span-12 md:col-span-4">
-          <CausesList causes={client.causes} riskLevel={client.riskLevel} />
-        </div>
-      </div>
-      <MitigationSection plan={client.mitigationPlan} />
-    </>
-  );
+  if (client.riskLevel === 'critico') {
+    return <CriticoLayout client={client as CriticoClientDetail} />;
+  }
+
+  if (client.riskLevel === 'observacion') {
+    return <ObservacionLayout client={client as ObservacionClientDetail} />;
+  }
+
+  return <SaludableLayout client={client as SaludableClientDetail} />;
 }
