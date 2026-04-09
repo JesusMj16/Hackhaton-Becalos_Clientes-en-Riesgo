@@ -10,9 +10,9 @@ function getStrokeDashoffset(percentage: number) {
 
 export function RiskDistributionCard({ healthy, watching, critical }: RiskDistributionCardProps) {
   const total = healthy + watching + critical;
-  const healthyPct = healthy / total;
-  const watchingPct = watching / total;
-  const criticalPct = critical / total;
+  const healthyPct = total > 0 ? healthy / total : 0;
+  const watchingPct = total > 0 ? watching / total : 0;
+  const criticalPct = total > 0 ? critical / total : 0;
 
   return (
     <div className="flex flex-col rounded-xl bg-[#131b2e] p-6">

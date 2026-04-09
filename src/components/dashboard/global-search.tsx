@@ -3,19 +3,21 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { clients } from '@/data/clients';
-import { RISK_CONFIG } from '@/constants/risk';
+import { useAnalysisContext } from '@/context/AnalysisContext';
 
 export function GlobalSearch() {
   const [query, setQuery]   = useState('');
   const [open, setOpen]     = useState(false);
   const router              = useRouter();
   const containerRef        = useRef<HTMLDivElement>(null);
+  const { history, handleLoadAnalysis } = useAnalysisContext();
 
   const results = query.trim().length >= 2
-    ? clients.filter((c) => {
+    ? history.filter((item) => {
         const q = query.toLowerCase();
-        return c.name.toLowerCase().includes(q) || c.sector.toLowerCase().includes(q);
+        const clientName = (item.formData.clientName || item.result.clientName || '').toLowerCase();
+        const sector = (item.formData.sector || '').toLowerCase();
+        return clientName.includes(q) || sector.includes(q);
       })
     : [];
 
@@ -30,10 +32,21 @@ export function GlobalSearch() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  function handleSelect(id: string) {
+  function handleSearchSelect(item: any) {
     setQuery('');
     setOpen(false);
-    router.push(`/dashboard/clientes/${id}`);
+    
+    handleLoadAnalysis(item);
+    
+    // Si estamos en otra ruta, regresamos al dashboard para ver el resultado
+    if (window.location.pathname !== '/dashboard') {
+      router.push('/dashboard');
+    }
+
+    // Un timeout pequeño para permitir render o push del router antes de scrollear
+    setTimeout(() => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 100);
   }
 
   return (
@@ -57,24 +70,36 @@ export function GlobalSearch() {
             Clientes encontrados
           </p>
           <ul>
-            {results.map((client) => {
-              const cfg = RISK_CONFIG[client.riskLevel];
+            {results.map((item, index) => {
+              const displayName = item.formData.clientName || item.result.clientName || 'Sin Nombre';
+              const sector = item.formData.sector || 'Sin sector';
+              const initials = displayName.substring(0, 2).toUpperCase() || '??';
+              const riskLevel = item.result.riskLevel || 'MEDIO';
+
+              const riskColors: Record<string, string> = {
+                'CRÍTICO': 'bg-[#ef4444]/20 text-[#ef4444] border border-[#ef4444]/30',
+                'ALTO': 'bg-[#ef4444]/20 text-[#ef4444] border border-[#ef4444]/30',
+                'MEDIO': 'bg-[#eab308]/20 text-[#eab308] border border-[#eab308]/30',
+                'BAJO': 'bg-[#4ae176]/20 text-[#4ae176] border border-[#4ae176]/30',
+              };
+              const badgeClass = riskColors[riskLevel] || riskColors['MEDIO'];
+
               return (
-                <li key={client.id}>
+                <li key={index}>
                   <button
                     type="button"
-                    onClick={() => handleSelect(client.id)}
+                    onClick={() => handleSearchSelect(item)}
                     className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[#222a3d]"
                   >
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#2d3449] text-xs font-bold text-[#b4c5ff]">
-                      {client.initials}
+                      {initials}
                     </div>
                     <div className="flex-1">
-                      <p className="text-sm font-semibold text-white">{client.name}</p>
-                      <p className="text-xs text-[#8d90a0]">{client.sector}</p>
+                      <p className="text-sm font-semibold text-white">{displayName}</p>
+                      <p className="text-xs text-[#8d90a0]">{sector}</p>
                     </div>
-                    <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-bold', cfg.badgeClass)}>
-                      {cfg.label}
+                    <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-bold', badgeClass)}>
+                      {riskLevel}
                     </span>
                   </button>
                 </li>
@@ -86,7 +111,7 @@ export function GlobalSearch() {
 
       {open && query.trim().length >= 2 && results.length === 0 && (
         <div className="absolute left-0 right-0 top-full z-50 mt-2 rounded-xl border border-[#434655]/20 bg-[#131b2e] px-4 py-6 text-center shadow-2xl">
-          <p className="text-sm text-[#8d90a0]">Sin resultados para &quot;{query}&quot;</p>
+          <p className="text-sm text-[#8d90a0]">No se encontraron clientes que coincidan con la búsqueda.</p>
         </div>
       )}
     </div>

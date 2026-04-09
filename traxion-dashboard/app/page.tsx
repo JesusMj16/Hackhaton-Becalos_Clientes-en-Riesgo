@@ -1,24 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 /* =============================================
    TRAXIÓN AxIA — Dashboard de Detección Temprana
    de Clientes en Riesgo
    
-   Este componente contiene ambas secciones:
-   - Panel de Entrada de Datos (formulario)
-   - Panel de Resultados del Agente IA
-   
-   TODO (para desarrolladores):
-   - Conectar el botón "Analizar Riesgo" a la API real del agente IA
-   - Reemplazar mockResults con la respuesta real del backend
-   - Conectar formData a un store global si se necesita
+   - Vista principal con resultados.
+   - Formulario en panel deslizante (Drawer).
+   - Integrado con Gemini vía n8n Webhook.
    ============================================= */
 
 // ─── Tipos ────────────────────────────────────
 interface FormData {
   clientId: string;
+  sector: string;
   clientName: string;
   serviceLevel: number;
   punctuality: number;
@@ -46,52 +42,22 @@ interface AnalysisResult {
   specialAlerts: string[];
 }
 
-// ─── Datos mock para la demo ─────────────────
-const mockResults: AnalysisResult = {
-  clientName: "Grupo Industrial Monterrey S.A. de C.V.",
-  riskLevel: "CRÍTICO",
-  riskColor: "var(--risk-red)",
-  diagnosis:
-    "El cliente muestra un deterioro crítico en todos los indicadores clave. El nivel de servicio ha caído un 23% por debajo del umbral aceptable, la puntualidad se encuentra en niveles mínimos históricos y el NPS negativo indica una pérdida severa de confianza. La combinación de 12 quejas abiertas con tendencia creciente sugiere un riesgo inminente de pérdida del cliente.",
-  causes: [
-    "Nivel de servicio en 62%, muy por debajo del SLA comprometido (85%)",
-    "NPS de -35 indica insatisfacción crítica y posibilidad de detracción activa",
-    "12 quejas abiertas sin resolución con tendencia ascendente (+5 vs. mes anterior)",
-  ],
-  actions: [
-    {
-      action:
-        "Convocar reunión de crisis con el cliente para presentar plan de recuperación detallado con compromisos medibles",
-      deadline: "Inmediato (24h)",
-      deadlineColor: "var(--risk-red)",
-      responsible: "Dirección Comercial",
-    },
-    {
-      action:
-        "Asignar equipo dedicado de operaciones para resolver las 12 quejas abiertas y establecer canal de comunicación directo",
-      deadline: "48 horas",
-      deadlineColor: "var(--risk-red)",
-      responsible: "Gerencia de Operaciones",
-    },
-    {
-      action:
-        "Implementar monitoreo diario de embarques y compartir dashboard de seguimiento en tiempo real con el cliente",
-      deadline: "1 semana",
-      deadlineColor: "var(--risk-yellow)",
-      responsible: "Ejecutivo de Cuenta",
-    },
-    {
-      action:
-        "Elaborar propuesta de compensación comercial y plan de mejora de SLA con penalizaciones internas",
-      deadline: "2 semanas",
-      deadlineColor: "var(--risk-yellow)",
-      responsible: "Dirección Comercial",
-    },
-  ],
-  specialAlerts: [
-    "⚠️ CLIENTE ANCLA — Representa el 8.2% de la facturación regional",
-    "🔴 RUPTURA DE CONFIANZA — NPS negativo sostenido por 3 meses consecutivos",
-  ],
+// ─── Webhook del Agente IA (n8n) ─────────────
+const N8N_WEBHOOK_URL =
+  "https://guillex999.app.n8n.cloud/webhook/43a76ab1-7403-4470-8b42-54d7691365da";
+
+// ─── Valores por defecto del formulario ──────
+const defaultFormData: FormData = {
+  clientId: "",
+  sector: "",
+  clientName: "",
+  serviceLevel: 50,
+  punctuality: 50,
+  nps: 0,
+  openComplaints: 0,
+  complaintTrend: 0,
+  tenure: 12,
+  monthlyBilling: 0,
 };
 
 // ─── Iconos SVG inline ───────────────────────
@@ -153,6 +119,24 @@ function IconShield() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
       <path d="M9 12l2 2 4-4" />
+    </svg>
+  );
+}
+
+function IconPlus() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
+function IconClose() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
     </svg>
   );
 }
@@ -262,7 +246,7 @@ function SliderField({
           max={max}
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="relative z-10"
+          className="relative z-10 w-full"
         />
       </div>
       <div className="flex justify-between text-xs" style={{ color: "var(--text-dim)" }}>
@@ -377,43 +361,211 @@ function NumberField({
 
 export default function DashboardPage() {
   // === Estado del formulario ===
-  // TODO: Conectar con un store global (Zustand, Context, etc.) si se necesita
-  const [formData, setFormData] = useState<FormData>({
-    clientId: "CLT-00847",
-    clientName: "Grupo Industrial Monterrey S.A. de C.V.",
-    serviceLevel: 62,
-    punctuality: 55,
-    nps: -35,
-    openComplaints: 12,
-    complaintTrend: 5,
-    tenure: 36,
-    monthlyBilling: 2850000,
-  });
+  const [formData, setFormData] = useState<FormData>(defaultFormData);
 
   // === Estado de la sección de resultados ===
-  // TODO: Reemplazar con la respuesta real de la API de AxIA
-  const [results] = useState<AnalysisResult | null>(mockResults);
+  const [results, setResults] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // === Estado del slide-over (drawer) ===
+  const [isNewClientOpen, setIsNewClientOpen] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+
+  // Bloquear scroll del body cuando el drawer está abierto
+  useEffect(() => {
+    if (isNewClientOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "unset";
+    }
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, [isNewClientOpen]);
+
+  // Abrir el panel y resetear el formulario a valores limpios
+  const openNewClient = useCallback(() => {
+    setFormData(defaultFormData);
+    setIsClosing(false);
+    setIsNewClientOpen(true);
+  }, []);
+
+  // Cerrar con animación de salida simulada por estado (usando transform en styles)
+  const closeNewClient = useCallback(() => {
+    if (isAnalyzing) return; // No cerrar mientras analiza
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsNewClientOpen(false);
+      setIsClosing(false);
+    }, 300); // 300ms transition duration
+  }, [isAnalyzing]);
 
   const updateField = <K extends keyof FormData>(key: K, value: FormData[K]) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
-  // Handler del botón de análisis
-  // TODO: Conectar a la API real del agente AxIA
+  // Handler del botón de análisis — Conexión real al agente AxIA (n8n)
   const handleAnalyze = async () => {
+    // 1. Activar estado de carga y limpiar resultados previos
     setIsAnalyzing(true);
-    // Simulamos un delay de procesamiento de IA
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    setIsAnalyzing(false);
-    // TODO: Aquí se haría la llamada real:
-    // const response = await fetch('/api/axia/analyze', { method: 'POST', body: JSON.stringify(formData) });
-    // const data = await response.json();
-    // setResults(data);
+    setResults(null);
+
+    try {
+      // 2. Mapear formData al payload exacto que espera el webhook
+      const payload = {
+        cliente_id: formData.clientId,
+        sector: formData.sector,
+        nombre_cliente: formData.clientName,
+        nivel_servicio: formData.serviceLevel,
+        puntualidad: formData.punctuality,
+        nps: formData.nps,
+        quejas_abiertas: formData.openComplaints,
+        tendencia_quejas: formData.complaintTrend,
+        antiguedad_meses: formData.tenure,
+        facturacion_mensual_mxn: formData.monthlyBilling,
+      };
+
+      // 3. Llamada al webhook de n8n
+      const response = await fetch(N8N_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error del servidor: ${response.status} ${response.statusText}`);
+      }
+
+      // 4. Parseo seguro del JSON (evita "Unexpected end of JSON input")
+      const rawText = await response.text();
+      if (!rawText || rawText.trim().length === 0) {
+        throw new Error("La respuesta del agente IA está vacía.");
+      }
+
+      const data = JSON.parse(rawText);
+
+      // 5. Mapear respuesta de la IA al formato AnalysisResult
+      const riskRaw = (data.nivel_riesgo || data.riskLevel || "MEDIO").toUpperCase().trim();
+      const riskMap: Record<string, AnalysisResult["riskLevel"]> = {
+        "CRÍTICO": "CRÍTICO",
+        "CRITICO": "CRÍTICO",
+        "ALTO": "ALTO",
+        "MEDIO": "MEDIO",
+        "BAJO": "BAJO",
+      };
+      const riskLevel: AnalysisResult["riskLevel"] = riskMap[riskRaw] || "MEDIO";
+
+      const riskColorMap: Record<AnalysisResult["riskLevel"], string> = {
+        "CRÍTICO": "var(--risk-red)",
+        "ALTO": "var(--risk-red)",
+        "MEDIO": "var(--risk-yellow)",
+        "BAJO": "var(--risk-green)",
+      };
+
+      const rawDataArray = Array.isArray(data.recomendaciones) ? data.recomendaciones : 
+                           Array.isArray(data.acciones) ? data.acciones : 
+                           Array.isArray(data.actions) ? data.actions : [];
+
+      const rawActions: ActionCard[] = rawDataArray.map(
+        (acc: any) => {
+          // 1. Manejo en caso de que la IA haya devuelto un arreglo strings planos
+          if (typeof acc === "string") {
+            const lowerString = acc.toLowerCase();
+            let deadlineColor = "var(--accent-blue)";
+            if (lowerString.includes("inmediat")) deadlineColor = "var(--risk-red)";
+            else if (lowerString.includes("corto")) deadlineColor = "var(--risk-yellow)";
+            
+            return {
+              action: acc,
+              deadline: lowerString.includes("inmediat") ? "Inmediato" : 
+                        lowerString.includes("corto") ? "Corto plazo" : "Por definir",
+              deadlineColor,
+              responsible: "Gerente / Monitor",
+            };
+          }
+
+          // 2. Manejo en caso de ser objeto (Asegurar fallback property names)
+          const actionText = acc.accion || acc.action || acc.recomendacion || acc.descripcion || "Acción no especificada";
+          const plazo = acc.plazo || acc.deadline || acc.tiempo || acc.urgencia || "Por definir";
+          const responsable = acc.responsable || acc.responsible || acc.encargado || acc.rol || "Por asignar";
+          
+          const plazoLower = String(plazo).toLowerCase();
+          let deadlineColor = "var(--accent-blue)";
+          if (plazoLower.includes("inmediat")) {
+            deadlineColor = "var(--risk-red)";
+          } else if (plazoLower.includes("corto") || plazoLower.includes("semana")) {
+            deadlineColor = "var(--risk-yellow)";
+          }
+
+          return {
+            action: actionText,
+            deadline: plazo,
+            deadlineColor,
+            responsible: responsable,
+          };
+        }
+      );
+
+      const mappedResult: AnalysisResult = {
+        clientName: data.nombre_cliente || formData.clientName,
+        riskLevel,
+        riskColor: riskColorMap[riskLevel],
+        diagnosis: data.diagnostico || data.diagnosis || "Sin diagnóstico disponible.",
+        causes: data.causas || data.causes || [],
+        actions: rawActions,
+        specialAlerts: data.alertas_especiales || data.specialAlerts || [],
+      };
+
+      setResults(mappedResult);
+
+      // UX: Cerrar drawer automáticamente para mostrar resultados
+      setIsClosing(true);
+      setTimeout(() => {
+        setIsNewClientOpen(false);
+        setIsClosing(false);
+      }, 300);
+
+    } catch (error: unknown) {
+      // 6. Resultado de error visual seguro para que el componente no colapse
+      const errorMessage =
+        error instanceof Error ? error.message : "Error desconocido al contactar al agente IA.";
+
+      setResults({
+        clientName: formData.clientName || "Cliente",
+        riskLevel: "CRÍTICO",
+        riskColor: "var(--risk-red)",
+        diagnosis: `⚠️ No se pudo completar el análisis: ${errorMessage}. Verifica tu conexión a internet e intenta de nuevo.`,
+        causes: [
+          "No se pudo establecer comunicación con el agente AxIA.",
+          "Esto puede deberse a un problema de red, límite de peticiones (Rate Limit), o una respuesta inesperada del servidor.",
+        ],
+        actions: [
+          {
+            action: "Verificar la conexión a internet y volver a intentar el análisis.",
+            deadline: "Inmediato",
+            deadlineColor: "var(--risk-red)",
+            responsible: "Usuario",
+          },
+        ],
+        specialAlerts: [
+          "🔴 ERROR DE CONEXIÓN — El agente AxIA no respondió correctamente",
+        ],
+      });
+      // Aún si hay error, cerramos el panel para ver el mensaje de error.
+      setIsClosing(true);
+      setTimeout(() => {
+        setIsNewClientOpen(false);
+        setIsClosing(false);
+      }, 300);
+
+    } finally {
+      // 7. Siempre desactivar estado de carga
+      setIsAnalyzing(false);
+    }
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col relative">
       {/* ─── Header / Navbar ─── */}
       <header
         className="sticky top-0 z-50 border-b backdrop-blur-xl"
@@ -426,7 +578,7 @@ export default function DashboardPage() {
           {/* Logo */}
           <div className="flex items-center gap-3">
             <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-white"
               style={{
                 background: "linear-gradient(135deg, var(--accent-blue), #1d4ed8)",
                 boxShadow: "0 4px 12px var(--accent-blue-glow)",
@@ -435,7 +587,7 @@ export default function DashboardPage() {
               <IconTruck />
             </div>
             <div>
-              <h1 className="text-base font-bold tracking-tight leading-none">
+              <h1 className="text-base font-bold tracking-tight leading-none text-white">
                 Trax<span style={{ color: "var(--accent-blue-light)" }}>ión</span>
               </h1>
               <p className="text-[10px] tracking-widest uppercase" style={{ color: "var(--text-dim)" }}>
@@ -446,7 +598,7 @@ export default function DashboardPage() {
 
           {/* Center title */}
           <div className="hidden md:flex items-center gap-2">
-            <IconShield />
+            <div className="text-[var(--text-muted)]"><IconShield /></div>
             <span className="text-sm font-semibold" style={{ color: "var(--text-muted)" }}>
               Dashboard de Detección Temprana de Clientes en Riesgo
             </span>
@@ -471,50 +623,381 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* ─── Main Content: Two-panel layout ─── */}
+      {/* ─── Main Content ─── */}
       <main className="flex-1 max-w-[1600px] mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
-          {/* ═══════════════════════════════════
-              SECCIÓN 1: Panel de Entrada de Datos
-              ═══════════════════════════════════ */}
-          <section className="lg:col-span-5 space-y-6 animate-fade-in-up">
-            {/* Section header */}
-            <div className="flex items-center gap-3 mb-2">
+
+        {/* ─── Top action bar with + Nuevo Cliente ─── */}
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-sm text-white"
+              style={{
+                background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
+              }}
+            >
+              🤖
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white">Resultado del Análisis AxIA</h2>
+              <p className="text-xs" style={{ color: "var(--text-dim)" }}>
+                Diagnóstico automatizado y plan de acción
+              </p>
+            </div>
+          </div>
+          <button
+            id="new-client-button"
+            type="button"
+            onClick={openNewClient}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold uppercase tracking-wide transition-all duration-300 cursor-pointer hover:scale-105 active:scale-95"
+            style={{
+              background: "linear-gradient(135deg, var(--accent-blue), #1d4ed8)",
+              color: "white",
+              border: "none",
+              boxShadow: "0 4px 15px var(--accent-blue-glow)",
+              letterSpacing: "0.03em",
+            }}
+          >
+            <IconPlus />
+            Nuevo Cliente
+          </button>
+        </div>
+
+        {/* ═══════════════════════════════════
+            Panel de Resultados IA (full width)
+            ═══════════════════════════════════ */}
+        <section className="space-y-6">
+          {results ? (
+            <div className="space-y-5">
+              {/* ─── Risk Header ─── */}
               <div
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-sm"
-                style={{
-                  background: "linear-gradient(135deg, var(--accent-blue), #1d4ed8)",
+                className="p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-2xl"
+                style={{ 
+                  backgroundColor: "var(--surface-100)", 
+                  border: "1px solid rgba(239, 68, 68, 0.3)" 
                 }}
               >
-                📊
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-dim)" }}>
+                    Cliente Analizado
+                  </p>
+                  <h3 className="text-xl font-bold text-white">{results.clientName}</h3>
+                </div>
+
+                {/* Traffic light / Semáforo */}
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5 p-2 rounded-xl" style={{ backgroundColor: "var(--surface-200)" }}>
+                    {/* Green light */}
+                    <div
+                      className="w-5 h-5 rounded-full transition-all"
+                      style={{
+                        backgroundColor: results.riskLevel === "BAJO" ? "var(--risk-green)" : "var(--surface-300)",
+                        boxShadow: results.riskLevel === "BAJO" ? "0 0 12px var(--risk-green)" : "none",
+                      }}
+                    />
+                    {/* Yellow light */}
+                    <div
+                      className="w-5 h-5 rounded-full transition-all"
+                      style={{
+                        backgroundColor: results.riskLevel === "MEDIO" ? "var(--risk-yellow)" : "var(--surface-300)",
+                        boxShadow: results.riskLevel === "MEDIO" ? "0 0 12px var(--risk-yellow)" : "none",
+                      }}
+                    />
+                    {/* Red light */}
+                    <div
+                      className="w-5 h-5 rounded-full transition-all"
+                      style={{
+                        backgroundColor:
+                          results.riskLevel === "CRÍTICO" || results.riskLevel === "ALTO"
+                            ? "var(--risk-red)"
+                            : "var(--surface-300)",
+                        boxShadow:
+                          results.riskLevel === "CRÍTICO" || results.riskLevel === "ALTO"
+                            ? "0 0 12px var(--risk-red)"
+                            : "none",
+                      }}
+                    />
+                  </div>
+                  <span
+                    className="px-4 py-2 rounded-xl text-sm font-extrabold uppercase tracking-widest animate-pulse"
+                    style={{
+                      backgroundColor: "rgba(239, 68, 68, 0.15)",
+                      color: "var(--risk-red)",
+                      border: "1px solid rgba(239, 68, 68, 0.3)",
+                    }}
+                  >
+                    {results.riskLevel}
+                  </span>
+                </div>
               </div>
-              <div>
-                <h2 className="text-lg font-bold">Panel de Métricas</h2>
-                <p className="text-xs" style={{ color: "var(--text-dim)" }}>
-                  Ingresa los indicadores del cliente para el análisis
+
+              {/* ─── Diagnosis Card ─── */}
+              <div
+                className="p-5 sm:p-6 rounded-2xl"
+                style={{
+                  backgroundColor: "var(--surface-100)",
+                  border: "1px solid var(--card-border)",
+                  borderLeft: "4px solid var(--accent-blue)",
+                }}
+              >
+                <div className="flex items-center gap-2 mb-3 text-[var(--accent-blue-light)]">
+                  <IconBrain />
+                  <h4 className="text-sm font-bold uppercase tracking-wider" style={{ color: "var(--accent-blue-light)" }}>
+                    Diagnóstico de AxIA
+                  </h4>
+                </div>
+                <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
+                  {results.diagnosis}
                 </p>
               </div>
+
+              {/* ─── Root Causes ─── */}
+              <div className="p-5 sm:p-6 rounded-2xl" style={{ backgroundColor: "var(--surface-100)", border: "1px solid var(--card-border)" }}>
+                <h4 className="text-sm font-bold uppercase tracking-wider mb-4 text-[var(--risk-red)]">
+                  <span className="flex items-center gap-2">
+                    <IconAlert />
+                    Causas Principales Detectadas
+                  </span>
+                </h4>
+                <ul className="space-y-3">
+                  {results.causes.map((cause, i) => (
+                    <li
+                      key={i}
+                      className="flex items-start gap-3 p-3 rounded-xl transition-all duration-200"
+                      style={{
+                        backgroundColor: "rgba(239, 68, 68, 0.06)",
+                        border: "1px solid rgba(239, 68, 68, 0.12)",
+                      }}
+                    >
+                      <span
+                        className="mt-0.5 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                        style={{
+                          backgroundColor: "rgba(239, 68, 68, 0.2)",
+                          color: "var(--risk-red)",
+                        }}
+                      >
+                        {i + 1}
+                      </span>
+                      <span className="text-sm leading-relaxed text-[var(--text-muted)]">
+                        {cause}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* ─── Action Recommendation Cards ─── */}
+              <div>
+                <h4 className="text-sm font-bold uppercase tracking-wider mb-4 flex items-center gap-2 text-[var(--risk-green)]">
+                  <IconShield />
+                  Recomendaciones de Acción Preventiva
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {results.actions.map((action, i) => (
+                    <div
+                      key={i}
+                      className="p-5 space-y-4 rounded-2xl transition-colors hover:border-[var(--accent-blue)]"
+                      style={{ backgroundColor: "var(--surface-100)", border: "1px solid var(--card-border)" }}
+                    >
+                      {/* Action number */}
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold text-white"
+                          style={{
+                            background: "linear-gradient(135deg, var(--accent-blue), #1d4ed8)",
+                          }}
+                        >
+                          {i + 1}
+                        </span>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-[var(--text-dim)]">
+                          ACCIÓN {i + 1}
+                        </span>
+                      </div>
+
+                      {/* Action text */}
+                      <p className="text-sm leading-relaxed text-white">
+                        {action.action}
+                      </p>
+
+                      {/* Metadata: Deadline + Responsible */}
+                      <div className="flex flex-wrap items-center gap-2 pt-2 border-t" style={{ borderColor: "var(--card-border)" }}>
+                        <span
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold"
+                          style={{
+                            backgroundColor: `color-mix(in srgb, ${action.deadlineColor} 15%, transparent)`,
+                            color: action.deadlineColor,
+                            border: `1px solid color-mix(in srgb, ${action.deadlineColor} 25%, transparent)`,
+                          }}
+                        >
+                          <IconClock />
+                          {action.deadline}
+                        </span>
+                        <span
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                          style={{
+                            backgroundColor: "var(--surface-200)",
+                            color: "var(--text-muted)",
+                            border: "1px solid var(--card-border)",
+                          }}
+                        >
+                          <IconUser />
+                          {action.responsible}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* ─── Special Alerts ─── */}
+              {results.specialAlerts.length > 0 && (
+                <div className="space-y-3">
+                  {results.specialAlerts.map((alert, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 px-5 py-4 rounded-2xl"
+                      style={{
+                        background: "linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(234, 179, 8, 0.06))",
+                        border: "1px solid rgba(239, 68, 68, 0.2)",
+                      }}
+                    >
+                      <span className="text-sm font-semibold" style={{ color: "var(--risk-yellow)" }}>
+                        {alert}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ─── Empty state: invita a agregar un cliente ─── */
+            <div className="p-16 flex flex-col items-center justify-center text-center space-y-6 rounded-2xl" style={{ backgroundColor: "var(--surface-100)", border: "1px solid var(--card-border)" }}>
+              <div
+                className="w-24 h-24 rounded-2xl flex items-center justify-center text-4xl"
+                style={{
+                  background: "linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(37, 99, 235, 0.05))",
+                  border: "1px solid rgba(37, 99, 235, 0.2)",
+                }}
+              >
+                🤖
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xl font-bold text-white">Bienvenido al Dashboard AxIA</h3>
+                <p className="text-sm max-w-lg mx-auto" style={{ color: "var(--text-dim)" }}>
+                  Comienza ingresando las métricas de un cliente en el panel para generar un diagnóstico de riesgo automatizado con Inteligencia Artificial.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={openNewClient}
+                className="flex items-center gap-2 px-8 py-4 rounded-2xl text-base font-bold uppercase tracking-wide transition-all duration-300 cursor-pointer hover:scale-105 active:scale-95"
+                style={{
+                  background: "linear-gradient(135deg, var(--accent-blue), #1d4ed8)",
+                  color: "white",
+                  border: "none",
+                  letterSpacing: "0.05em",
+                  boxShadow: "0 4px 15px var(--accent-blue-glow)",
+                }}
+              >
+                <IconPlus />
+                Nuevo Cliente
+              </button>
+            </div>
+          )}
+        </section>
+      </main>
+
+      {/* ═══════════════════════════════════════════════
+          SLIDE-OVER DRAWER: Panel de Métricas
+          ═══════════════════════════════════════════════ */}
+      {isNewClientOpen && (
+        <div className="fixed inset-0 z-[100] flex justify-end">
+          {/* Backdrop overlay */}
+          <div
+            onClick={closeNewClient}
+            className="absolute inset-0 transition-opacity duration-300"
+            style={{
+              backgroundColor: "rgba(0, 0, 0, 0.6)",
+              backdropFilter: "blur(4px)",
+              opacity: isClosing ? 0 : 1
+            }}
+          />
+
+          {/* Drawer panel */}
+          <aside
+            className="relative w-full max-w-lg flex flex-col h-full transition-transform duration-300 ease-in-out"
+            style={{
+              backgroundColor: "rgba(15, 23, 42, 0.97)",
+              backdropFilter: "blur(20px)",
+              borderLeft: "1px solid var(--card-border)",
+              boxShadow: "-8px 0 40px rgba(0, 0, 0, 0.5)",
+              transform: isClosing ? "translateX(100%)" : "translateX(0)"
+            }}
+          >
+            {/* ─── Drawer Header ─── */}
+            <div
+              className="flex items-center justify-between px-6 py-4 border-b"
+              style={{ borderColor: "var(--card-border)" }}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-sm text-white"
+                  style={{
+                    background: "linear-gradient(135deg, var(--accent-blue), #1d4ed8)",
+                  }}
+                >
+                  📊
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-white">Panel de Métricas</h2>
+                  <p className="text-[11px]" style={{ color: "var(--text-dim)" }}>
+                    Ingrese los indicadores del cliente para el análisis
+                  </p>
+                </div>
+              </div>
+              <button
+                id="close-drawer-button"
+                type="button"
+                onClick={closeNewClient}
+                disabled={isAnalyzing}
+                className="w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-200 hover:scale-110 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{
+                  backgroundColor: "var(--surface-200)",
+                  border: "1px solid var(--card-border)",
+                  color: "var(--text-muted)",
+                }}
+                title="Cerrar"
+              >
+                <IconClose />
+              </button>
             </div>
 
-            {/* Form card */}
-            <div className="glass-card p-5 sm:p-6 space-y-5">
+            {/* ─── Drawer Body (scrollable) ─── */}
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
               {/* Client info */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <InputField
                   label="ID del Cliente"
                   id="clientId"
                   value={formData.clientId}
                   onChange={(v) => updateField("clientId", v)}
-                  placeholder="CLT-00000"
+                  placeholder="CLT-000"
                 />
                 <InputField
-                  label="Nombre del Cliente"
-                  id="clientName"
-                  value={formData.clientName}
-                  onChange={(v) => updateField("clientName", v)}
-                  placeholder="Razón Social"
+                  label="Sector"
+                  id="sector"
+                  value={formData.sector}
+                  onChange={(v) => updateField("sector", v)}
+                  placeholder="Logística"
                 />
               </div>
+
+              <InputField
+                label="Nombre de la Entidad"
+                id="clientName"
+                value={formData.clientName}
+                onChange={(v) => updateField("clientName", v)}
+                placeholder="Razón Social Completa"
+              />
 
               {/* Divider */}
               <div className="border-t" style={{ borderColor: "var(--card-border)" }} />
@@ -554,7 +1037,7 @@ export default function DashboardPage() {
               <div className="border-t" style={{ borderColor: "var(--card-border)" }} />
 
               {/* Number fields */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <NumberField
                   label="Quejas Abiertas"
                   id="openComplaints"
@@ -563,14 +1046,14 @@ export default function DashboardPage() {
                   min={0}
                 />
                 <NumberField
-                  label="Tendencia de Quejas (±)"
+                  label="Tendencia Quejas"
                   id="complaintTrend"
                   value={formData.complaintTrend}
                   onChange={(v) => updateField("complaintTrend", v)}
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <NumberField
                   label="Antigüedad (meses)"
                   id="tenure"
@@ -589,288 +1072,49 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* ─── CTA Button ─── */}
-            <button
-              id="analyze-button"
-              type="button"
-              onClick={handleAnalyze}
-              disabled={isAnalyzing}
-              className="w-full py-4 px-6 rounded-2xl text-base font-bold tracking-wide uppercase transition-all duration-300 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed animate-pulse-glow hover:scale-[1.02] active:scale-[0.98]"
-              style={{
-                background: isAnalyzing
-                  ? "var(--surface-300)"
-                  : "linear-gradient(135deg, var(--accent-blue), #1d4ed8, var(--accent-blue))",
-                color: "white",
-                border: "none",
-                letterSpacing: "0.05em",
-              }}
+            {/* ─── Drawer Footer: CTA Button ─── */}
+            <div
+              className="px-6 py-4 border-t"
+              style={{ borderColor: "var(--card-border)" }}
             >
-              {isAnalyzing ? (
-                <span className="flex items-center justify-center gap-3">
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
-                    <path d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" fill="currentColor" className="opacity-75" />
-                  </svg>
-                  Analizando con AxIA...
-                </span>
-              ) : (
-                <span className="flex items-center justify-center gap-3">
-                  <IconBrain />
-                  Analizar Riesgo con AxIA
-                </span>
-              )}
-            </button>
-          </section>
-
-          {/* ═══════════════════════════════════
-              SECCIÓN 2: Panel de Resultados IA
-              ═══════════════════════════════════ */}
-          <section className="lg:col-span-7 space-y-6 animate-fade-in-up" style={{ animationDelay: "0.15s" }}>
-            {/* Section header */}
-            <div className="flex items-center gap-3 mb-2">
-              <div
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-sm"
+              <button
+                id="analyze-button"
+                type="button"
+                onClick={handleAnalyze}
+                disabled={isAnalyzing}
+                className="w-full py-4 px-6 rounded-2xl text-base font-bold tracking-wide uppercase transition-all duration-300 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
                 style={{
-                  background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
+                  background: isAnalyzing
+                    ? "var(--surface-300)"
+                    : "linear-gradient(135deg, var(--accent-blue), #1d4ed8)",
+                  color: "white",
+                  border: "none",
+                  letterSpacing: "0.05em",
                 }}
               >
-                🤖
-              </div>
-              <div>
-                <h2 className="text-lg font-bold">Resultado del Análisis AxIA</h2>
-                <p className="text-xs" style={{ color: "var(--text-dim)" }}>
-                  Diagnóstico automatizado y plan de acción
-                </p>
-              </div>
-            </div>
-
-            {results ? (
-              <div className="space-y-5">
-                {/* ─── Risk Header ─── */}
-                <div
-                  className="glass-card p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
-                  style={{ borderColor: "rgba(239, 68, 68, 0.3)" }}
-                >
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-dim)" }}>
-                      Cliente Analizado
-                    </p>
-                    <h3 className="text-xl font-bold">{results.clientName}</h3>
-                  </div>
-
-                  {/* Traffic light / Semáforo */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1.5 p-2 rounded-xl" style={{ backgroundColor: "var(--surface-200)" }}>
-                      {/* Green light */}
-                      <div
-                        className="w-5 h-5 rounded-full transition-all"
-                        style={{
-                          backgroundColor: results.riskLevel === "BAJO" ? "var(--risk-green)" : "var(--surface-300)",
-                          boxShadow: results.riskLevel === "BAJO" ? "0 0 12px var(--risk-green)" : "none",
-                        }}
-                      />
-                      {/* Yellow light */}
-                      <div
-                        className="w-5 h-5 rounded-full transition-all"
-                        style={{
-                          backgroundColor: results.riskLevel === "MEDIO" ? "var(--risk-yellow)" : "var(--surface-300)",
-                          boxShadow: results.riskLevel === "MEDIO" ? "0 0 12px var(--risk-yellow)" : "none",
-                        }}
-                      />
-                      {/* Red light */}
-                      <div
-                        className="w-5 h-5 rounded-full transition-all"
-                        style={{
-                          backgroundColor:
-                            results.riskLevel === "CRÍTICO" || results.riskLevel === "ALTO"
-                              ? "var(--risk-red)"
-                              : "var(--surface-300)",
-                          boxShadow:
-                            results.riskLevel === "CRÍTICO" || results.riskLevel === "ALTO"
-                              ? "0 0 12px var(--risk-red)"
-                              : "none",
-                        }}
-                      />
-                    </div>
-                    <span
-                      className="px-4 py-2 rounded-xl text-sm font-extrabold uppercase tracking-widest animate-risk-pulse"
-                      style={{
-                        backgroundColor: "rgba(239, 68, 68, 0.15)",
-                        color: "var(--risk-red)",
-                        border: "1px solid rgba(239, 68, 68, 0.3)",
-                      }}
-                    >
-                      {results.riskLevel}
-                    </span>
-                  </div>
-                </div>
-
-                {/* ─── Diagnosis Card ─── */}
-                <div
-                  className="glass-card p-5 sm:p-6"
-                  style={{
-                    borderLeft: "4px solid var(--accent-blue)",
-                  }}
-                >
-                  <div className="flex items-center gap-2 mb-3">
+                {isAnalyzing ? (
+                  <span className="flex items-center justify-center gap-3">
+                    <svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+                      <path d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" fill="currentColor" className="opacity-75" />
+                    </svg>
+                    Analizando...
+                  </span>
+                ) : (
+                  <span className="flex items-center justify-center gap-3">
                     <IconBrain />
-                    <h4 className="text-sm font-bold uppercase tracking-wider" style={{ color: "var(--accent-blue-light)" }}>
-                      Diagnóstico de AxIA
-                    </h4>
-                  </div>
-                  <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-                    {results.diagnosis}
-                  </p>
-                </div>
-
-                {/* ─── Root Causes ─── */}
-                <div className="glass-card p-5 sm:p-6">
-                  <h4 className="text-sm font-bold uppercase tracking-wider mb-4" style={{ color: "var(--risk-red)" }}>
-                    <span className="flex items-center gap-2">
-                      <IconAlert />
-                      Causas Principales Detectadas
-                    </span>
-                  </h4>
-                  <ul className="space-y-3">
-                    {results.causes.map((cause, i) => (
-                      <li
-                        key={i}
-                        className="flex items-start gap-3 p-3 rounded-xl transition-all duration-200 hover:scale-[1.01]"
-                        style={{
-                          backgroundColor: "rgba(239, 68, 68, 0.06)",
-                          border: "1px solid rgba(239, 68, 68, 0.12)",
-                        }}
-                      >
-                        <span
-                          className="mt-0.5 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                          style={{
-                            backgroundColor: "rgba(239, 68, 68, 0.2)",
-                            color: "var(--risk-red)",
-                          }}
-                        >
-                          {i + 1}
-                        </span>
-                        <span className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-                          {cause}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {/* ─── Action Recommendation Cards ─── */}
-                <div>
-                  <h4 className="text-sm font-bold uppercase tracking-wider mb-4 flex items-center gap-2" style={{ color: "var(--risk-green)" }}>
-                    <IconShield />
-                    Recomendaciones de Acción Preventiva
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {results.actions.map((action, i) => (
-                      <div
-                        key={i}
-                        className="glass-card p-5 space-y-4 hover:border-blue-500/30"
-                        style={{ animationDelay: `${0.1 * (i + 1)}s` }}
-                      >
-                        {/* Action number */}
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold"
-                            style={{
-                              background: "linear-gradient(135deg, var(--accent-blue), #1d4ed8)",
-                              color: "white",
-                            }}
-                          >
-                            {i + 1}
-                          </span>
-                          <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-dim)" }}>
-                            Acción {i + 1}
-                          </span>
-                        </div>
-
-                        {/* Action text */}
-                        <p className="text-sm leading-relaxed" style={{ color: "var(--foreground)" }}>
-                          {action.action}
-                        </p>
-
-                        {/* Metadata: Deadline + Responsible */}
-                        <div className="flex flex-wrap items-center gap-2 pt-2 border-t" style={{ borderColor: "var(--card-border)" }}>
-                          {/* Deadline badge */}
-                          <span
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold"
-                            style={{
-                              backgroundColor: `color-mix(in srgb, ${action.deadlineColor} 15%, transparent)`,
-                              color: action.deadlineColor,
-                              border: `1px solid color-mix(in srgb, ${action.deadlineColor} 25%, transparent)`,
-                            }}
-                          >
-                            <IconClock />
-                            {action.deadline}
-                          </span>
-                          {/* Responsible badge */}
-                          <span
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
-                            style={{
-                              backgroundColor: "var(--surface-200)",
-                              color: "var(--text-muted)",
-                              border: "1px solid var(--card-border)",
-                            }}
-                          >
-                            <IconUser />
-                            {action.responsible}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* ─── Special Alerts ─── */}
-                {results.specialAlerts.length > 0 && (
-                  <div className="space-y-3">
-                    {results.specialAlerts.map((alert, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center gap-3 px-5 py-4 rounded-2xl animate-float"
-                        style={{
-                          background: "linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(234, 179, 8, 0.06))",
-                          border: "1px solid rgba(239, 68, 68, 0.2)",
-                          animationDelay: `${i * 0.5}s`,
-                        }}
-                      >
-                        <span className="text-sm font-semibold" style={{ color: "var(--risk-yellow)" }}>
-                          {alert}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                    Analizar Riesgo con AxIA
+                  </span>
                 )}
-              </div>
-            ) : (
-              /* ─── Empty state cuando no hay resultados ─── */
-              <div className="glass-card p-12 flex flex-col items-center justify-center text-center space-y-4">
-                <div
-                  className="w-20 h-20 rounded-2xl flex items-center justify-center text-3xl animate-float"
-                  style={{
-                    background: "linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(37, 99, 235, 0.05))",
-                    border: "1px solid rgba(37, 99, 235, 0.2)",
-                  }}
-                >
-                  🤖
-                </div>
-                <h3 className="text-lg font-bold">Esperando Análisis</h3>
-                <p className="text-sm max-w-md" style={{ color: "var(--text-dim)" }}>
-                  Ingresa las métricas del cliente en el panel izquierdo y presiona
-                  &quot;Analizar Riesgo con AxIA&quot; para obtener el diagnóstico.
-                </p>
-              </div>
-            )}
-          </section>
+              </button>
+            </div>
+          </aside>
         </div>
-      </main>
+      )}
 
       {/* ─── Footer ─── */}
       <footer
-        className="border-t py-4 text-center"
+        className="border-t py-4 text-center mt-auto"
         style={{
           borderColor: "var(--card-border)",
           backgroundColor: "rgba(15, 23, 42, 0.5)",

@@ -22,27 +22,40 @@ const FILTER_STYLES: Record<Filter, string> = {
   saludable:   'border-[#4ae176]/40 bg-[#4ae176]/10 text-[#4ae176]',
 };
 
-const criticalCount   = clients.filter((c) => c.riskLevel === 'critico').length;
-const watchingCount   = clients.filter((c) => c.riskLevel === 'observacion').length;
-const healthyCount    = clients.filter((c) => c.riskLevel === 'saludable').length;
+import { useAnalysisContext } from '@/context/AnalysisContext';
 
 export function ClientsView() {
   const [query, setQuery]   = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const { history } = useAnalysisContext();
 
-  const filtered = clients.filter((c) => {
-    const matchesFilter = filter === 'all' || c.riskLevel === filter;
+  const filtered = history.filter((item) => {
+    // We map Context types to our local filters: 
+    // CRÍTICO -> critico, ALTO/MEDIO -> observacion, BAJO -> saludable
+    let mappedRisk: Filter = 'saludable';
+    if (item.result.riskLevel === 'CRÍTICO') mappedRisk = 'critico';
+    else if (item.result.riskLevel === 'ALTO' || item.result.riskLevel === 'MEDIO') mappedRisk = 'observacion';
+
+    const matchesFilter = filter === 'all' || mappedRisk === filter;
     const q = query.toLowerCase();
-    const matchesQuery =
-      !q || c.name.toLowerCase().includes(q) || c.sector.toLowerCase().includes(q);
+    
+    // Fallback names logic
+    const clientName = item.formData.clientName || item.result.clientName || '';
+    const sector = item.formData.sector || '';
+
+    const matchesQuery = !q || clientName.toLowerCase().includes(q) || sector.toLowerCase().includes(q);
     return matchesFilter && matchesQuery;
   });
+
+  const criticalCount = history.filter((item) => item.result.riskLevel === 'CRÍTICO').length;
+  const watchingCount = history.filter((item) => item.result.riskLevel === 'ALTO' || item.result.riskLevel === 'MEDIO').length;
+  const healthyCount  = history.filter((item) => item.result.riskLevel === 'BAJO').length;
 
   return (
     <div className="space-y-6">
       {/* Stats row */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="Total Clientes" value={clients.length} colorClass="text-white" />
+        <StatCard label="Total Clientes" value={history.length} colorClass="text-white" />
         <StatCard label="Crítico"     value={criticalCount}   colorClass="text-[#ef4444]" />
         <StatCard label="Observación" value={watchingCount}   colorClass="text-[#EAB308]" />
         <StatCard label="Saludable"   value={healthyCount}    colorClass="text-[#4ae176]" />
@@ -86,7 +99,7 @@ export function ClientsView() {
 
       {/* Table */}
       {filtered.length > 0 ? (
-        <ClientsTable clients={filtered} />
+        <ClientsTable history={filtered} />
       ) : (
         <div className="rounded-xl border border-[#434655]/10 bg-[#131b2e] py-16 text-center">
           <span className="material-symbols-outlined mb-3 text-5xl text-[#434655]">search_off</span>
