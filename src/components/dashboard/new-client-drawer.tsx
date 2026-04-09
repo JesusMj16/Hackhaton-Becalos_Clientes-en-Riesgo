@@ -436,9 +436,13 @@ function SliderField({
           {value}{unit}
         </span>
       </div>
-      <div className="relative">
+      <div className="relative flex items-center h-6">
+        {/* Track Background */}
+        <div className="absolute w-full h-1.5 rounded-full bg-[#131b2e]" />
+        
+        {/* Progress Track (Dynamic) */}
         <div
-          className="absolute top-1/2 left-0 h-1.5 rounded-full -translate-y-1/2 pointer-events-none transition-all duration-200"
+          className="absolute h-1.5 rounded-full pointer-events-none transition-all duration-200 z-0"
           style={{
             width: `${ratio * 100}%`,
             background: `linear-gradient(90deg, ${getColor()}, ${getColor()})`,
@@ -446,13 +450,20 @@ function SliderField({
             boxShadow: `0 0 10px ${getColor()}40`,
           }}
         />
+        
         <input
           type="range"
           min={min}
           max={max}
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="relative z-10 w-full h-1.5 appearance-none rounded-full bg-[#131b2e] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white cursor-pointer"
+          className="relative z-10 w-full h-full appearance-none bg-transparent cursor-pointer
+            [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5
+            [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-md
+            [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:relative [&::-webkit-slider-thumb]:z-20
+            [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:h-5
+            [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:shadow-md
+            [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:border-none"
         />
       </div>
       <div className="flex justify-between text-[10px] text-[#8d90a0]">
